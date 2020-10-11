@@ -10,7 +10,11 @@ import (
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
 	"github.com/gruntwork-io/terratest/modules/aws"
-	awsx "github.com/gruntwork-io/terratest/modules/aws"
+
+	//awsx "github.com/gruntwork-io/terratest/modules/aws"
+	// This "awsx" is the package "github.com/gruntwork-io/terratest/modules/aws". It is not necessary use "awsx." because
+	//the Objects of "github.com/aws/aws-sdk-go/aws" are identified by "awsy."
+
 	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
@@ -159,15 +163,15 @@ func TestEC2PlatAutom(t *testing.T) {
 	fmt.Println("------------------------------------------------")
 
 	fmt.Println("---------------Public IP------------------------")
-	fmt.Println(awsx.GetPublicIpOfEc2Instance(t, instanceID, awsRegion))
+	fmt.Println(aws.GetPublicIpOfEc2Instance(t, instanceID, awsRegion))
 	fmt.Println("------------------------------------------------")
 
 	fmt.Println("-----------Private Hostname---------------------")
-	fmt.Println(awsx.GetPrivateHostnameOfEc2Instance(t, instanceID, awsRegion))
+	fmt.Println(aws.GetPrivateHostnameOfEc2Instance(t, instanceID, awsRegion))
 	fmt.Println("------------------------------------------------")
 
 	fmt.Println("---------------TAGS-----------------------------")
-	//fmt.Println(awsx.GetTagsForEc2Instance(t, instanceID, awsRegion))
+	//fmt.Println(aws.GetTagsForEc2Instance(t, instanceID, awsRegion))
 	fmt.Println("------------------------------------------------")
 
 }
