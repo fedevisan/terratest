@@ -1,32 +1,48 @@
 package test
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"testing"
 
-	awsy "github.com/aws/aws-sdk-go/aws"
+	awssdk "github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/aws/credentials"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/ec2"
-	"github.com/gruntwork-io/terratest/modules/aws"
 
-	//awsx "github.com/gruntwork-io/terratest/modules/aws"
-	// This "awsx" is the package "github.com/gruntwork-io/terratest/modules/aws". It is not necessary use "awsx." because
-	//the Objects of "github.com/aws/aws-sdk-go/aws" are identified by "awsy."
+	//  awsx "github.com/gruntwork-io/terratest/modules/aws"
+	//  This "awsx" is the package "github.com/gruntwork-io/terratest/modules/aws". Finally, it is not necessary use "awsx." because
+	//  the Objects of "github.com/aws/aws-sdk-go/aws" are identified by "awssdk."
 
-	"github.com/gruntwork-io/terratest/modules/random"
 	"github.com/gruntwork-io/terratest/modules/terraform"
 	"github.com/stretchr/testify/assert"
 )
 
 // An example of how to test the Terraform module in examples/terraform-aws-example using Terratest.
+
+// Define Struct for JSON Output Parsing
+
+type Vol struct {
+	Type    string   `json:"type,omitempty"`
+	Volumes []Volume `json:"Volumes,omitempty"`
+}
+
+type Volume struct {
+	Attachments      []Attachment `json:"Attachments,omitempty"`
+	Size             int          `json:"Size,omitempty"`
+	AvailabilityZone string       `json:"AvailabilityZone,omitempty"`
+}
+
+type Attachment struct {
+	Device string `json:"Device,omitempty"`
+}
+
 func TestEC2PlatAutom(t *testing.T) {
 	t.Parallel()
-
-	// Give this EC2 Instance a unique ID for a name tag so we can distinguish it from any other EC2 Instance running
-	// in your AWS account
-	expectedName := fmt.Sprintf("terratest-aws-example-%s", random.UniqueId())
 
 	// Pick a random AWS region to test in. This helps ensure your code works in all regions.
 	//awsRegion := aws.GetRandomStableRegion(t, nil, nil)
@@ -36,11 +52,6 @@ func TestEC2PlatAutom(t *testing.T) {
 	terraformOptions := &terraform.Options{
 		// The path to where our Terraform code is located
 		TerraformDir: "../examples/terraform-aws-example",
-
-		// Variables to pass to our Terraform code using -var options
-		Vars: map[string]interface{}{
-			"instance_name": expectedName,
-		},
 
 		// Environment variables to set when running Terraform
 		EnvVars: map[string]string{
@@ -57,24 +68,19 @@ func TestEC2PlatAutom(t *testing.T) {
 	// Run `terraform output` to get the value of an output variable
 	instanceID := terraform.Output(t, terraformOptions, "instance_id")
 
-	aws.AddTagsToResource(t, awsRegion, instanceID, map[string]string{"testing": "testing-tag-value"})
+	svc := ec2.New(session.New(&awssdk.Config{Region: awssdk.String("us-east-1"), Credentials: credentials.NewSharedCredentials("", "default")}))
 
-	// Look up the tags for the given Instance ID
-	instanceTags := aws.GetTagsForEc2Instance(t, awsRegion, instanceID)
-
-	// website::tag::3::Check if the EC2 instance with a given tag and name is set.
-	testingTag, containsTestingTag := instanceTags["testing"]
-	assert.True(t, containsTestingTag)
-	assert.Equal(t, "testing-tag-value", testingTag)
-
-	// Verify that our expected name tag is one of the tags
-	nameTag, containsNameTag := instanceTags["Name"]
-	assert.True(t, containsNameTag)
-	assert.Equal(t, expectedName, nameTag)
-
-	svc := ec2.New(session.New(&awsy.Config{Region: awsy.String("us-east-1"), Credentials: credentials.NewSharedCredentials("", "default")}))
-
-	input := &ec2.DescribeVolumesInput{}
+	//----------- Describe Volumes attached to this specific instance ----------------------
+	input := &ec2.DescribeVolumesInput{
+		Filters: []*ec2.Filter{
+			{
+				Name: awssdk.String("attachment.instance-id"),
+				Values: []*string{
+					awssdk.String(instanceID),
+				},
+			},
+		},
+	}
 	result, err := svc.DescribeVolumes(input)
 	if err != nil {
 		if aerr, ok := err.(awserr.Error); ok {
@@ -89,89 +95,47 @@ func TestEC2PlatAutom(t *testing.T) {
 		}
 		return
 	}
-	fmt.Println("Results WITHOUT Filter:")
-	fmt.Println(result)
-	fmt.Println("End of Results WITHOUT Filter:")
-	/*
-	   inputn := &ec2.DescribeVolumesInput{}
-	   resultn, err := svc.DescribeVolumes(inputn)
-	   if err != nil {
-	                   if aerr, ok := err.(awserr.Error); ok {
-	                                   switch aerr.Code() {
-	                                   default:
-	                                                  fmt.Println(aerr.Error())
-	                                   }
-	                   } else {
-	                                   // Print the error, cast err to awserr.Error to get the Code and
-	                                   // Message from an error.
-	                                   fmt.Println(err.Error())
-	                   }
-	                   return
-	   }
 
-	   fmt.Println(resultn)
-	*/
-	inputx := &ec2.DescribeVpcsInput{
-		VpcIds: []*string{
-			awsy.String("vpc-f9599e84"),
-		},
-	}
+	//fmt.Println(result)
 
-	resultx, err := svc.DescribeVpcs(inputx)
+	// ------------------ Convert to JSON Format the AWS Output of Volume Description --------------------------
+	b, err := json.Marshal(result)
 	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				fmt.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			fmt.Println(err.Error())
-		}
-		return
-	}
-	fmt.Println("Results VPC vpc-f9599e84:")
-	fmt.Println(resultx)
-	fmt.Println("End Of Results VPC vpc-f9599e84:")
-
-	// Describe Instance Atrributes
-	inputz := &ec2.DescribeInstanceAttributeInput{
-		Attribute:  awsy.String("instanceType"),
-		InstanceId: awsy.String(instanceID),
+		fmt.Println("error:", err)
 	}
 
-	resultz, err := svc.DescribeInstanceAttribute(inputz)
-	if err != nil {
-		if aerr, ok := err.(awserr.Error); ok {
-			switch aerr.Code() {
-			default:
-				fmt.Println(aerr.Error())
-			}
-		} else {
-			// Print the error, cast err to awserr.Error to get the Code and
-			// Message from an error.
-			fmt.Println(err.Error())
-		}
-		return
+	// Print the JSON Marshal Output
+	os.Stdout.Write(b)
+
+	// Parse JSON Output and Get the Volume Size of Instance created in this execution
+	m := []byte(b)
+
+	r := bytes.NewReader(m)
+	decoder := json.NewDecoder(r)
+
+	val := &Vol{}
+	error := decoder.Decode(val)
+
+	if error != nil {
+		log.Fatal(error)
 	}
 
-	fmt.Println(resultz)
+	// If you want to read a response body
+	// decoder := json.NewDecoder(res.Body)
+	// err := decoder.Decode(val)
 
-	fmt.Println("-------------Instance ID------------------------")
-	fmt.Println(instanceID)
-	fmt.Println("------------------------------------------------")
+	// ------------ Print Volume Size and Compare. Volumes is a slice so you must loop over it. -----------------------------------
+	for _, s := range val.Volumes {
 
-	fmt.Println("---------------Public IP------------------------")
-	fmt.Println(aws.GetPublicIpOfEc2Instance(t, instanceID, awsRegion))
-	fmt.Println("------------------------------------------------")
+		fmt.Println("\n-------------Volume Size------------------------")
+		fmt.Println(s.Size)
+		fmt.Println("-------------------------------------------------")
+		/*    for _, a := range s.Attachments {
+		      fmt.Println(a.Device)
+		  }*/
+		//Verify that the volume size is 8
+		assert.Equal(t, int(10), s.Size)
 
-	fmt.Println("-----------Private Hostname---------------------")
-	fmt.Println(aws.GetPrivateHostnameOfEc2Instance(t, instanceID, awsRegion))
-	fmt.Println("------------------------------------------------")
-
-	fmt.Println("---------------TAGS-----------------------------")
-	//fmt.Println(aws.GetTagsForEc2Instance(t, instanceID, awsRegion))
-	fmt.Println("------------------------------------------------")
+	}
 
 }
